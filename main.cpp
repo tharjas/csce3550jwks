@@ -15,7 +15,7 @@ int main() {
     keys.push_back(generateKey("key1", 3600)); // expires in 1h
     keys.push_back(generateKey("key2", -3600)); // expired
 
-    // JWKS endpoint
+    // JWKS endpoint: serve all keys so expired keys can be verified
     svr.Get("/.well-known/jwks.json", [&](const httplib::Request&, httplib::Response& res){
         json jwks; 
         jwks["keys"] = json::array();
@@ -23,23 +23,22 @@ int main() {
             auto [n,e] = getPublicKeyComponents(k.rsa);
             jwks["keys"].push_back({
                 {"kid", k.kid},
-                {"kty","RSA"},
-                {"alg","RS256"},
+                {"kty", "RSA"},
+                {"alg", "RS256"},
                 {"n", n},
-                {"e", e},
-                {"expired", k.expires <= time(nullptr)} // debugging
+                {"e", e}
             });
         }
         res.set_content(jwks.dump(), "application/json");
     });
 
-    // Auth endpoint
+    // auth endpoint: issue JWT
     svr.Post("/auth", [&](const httplib::Request& req, httplib::Response& res){
-        KeyPair* chosen = &keys[0]; // default: unexpired key
+        KeyPair* chosen = &keys[0]; // default: valid key
         
-        // if "expired" query param is present, return the expired key !
+        // if "expired" query is present, return the expired key
         if(req.has_param("expired")){
-            chosen = &keys[1];
+            chosen = &keys[1]; // second key is expired
         }
 
         json payload;
