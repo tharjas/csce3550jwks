@@ -17,9 +17,11 @@ int main() {
 
     // JWKS endpoint: serve all keys so gradebot can verify signatures
     svr.Get("/.well-known/jwks.json", [&](const httplib::Request&, httplib::Response& res){
-        json jwks; 
-        jwks["keys"] = json::array();
-        for(auto& k : keys){
+    json jwks; 
+    jwks["keys"] = json::array();
+    time_t now = time(nullptr);
+    for(auto& k : keys){
+        if(k.expires > now){ // ONLY unexpired keys
             auto [n,e] = getPublicKeyComponents(k.rsa);
             jwks["keys"].push_back({
                 {"kid", k.kid},
@@ -29,8 +31,9 @@ int main() {
                 {"e", e}
             });
         }
-        res.set_content(jwks.dump(), "application/json");
-    });
+    }
+    res.set_content(jwks.dump(), "application/json");
+});
 
     // /auth endpoint: issue JWTs
     svr.Post("/auth", [&](const httplib::Request& req, httplib::Response& res){
@@ -59,3 +62,4 @@ int main() {
     std::cout << "Server starting on port 8080...\n";
     svr.listen("0.0.0.0", 8080);
 }
+
