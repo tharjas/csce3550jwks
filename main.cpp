@@ -15,22 +15,24 @@ int main() {
     keys.push_back(generateKey("key1", 3600));  // expires in 1 hour
     keys.push_back(generateKey("key2", -3600)); // already expired
 
-    // JWKS endpoint: serve all keys including expired temporarily
+    // JWKS endpoint: serve only non-expired keys
     svr.Get("/.well-known/jwks.json", [&](const httplib::Request&, httplib::Response& res){
         json jwks; 
         jwks["keys"] = json::array();
+        time_t now = time(nullptr); // Get current time
         for(auto& k : keys){
-            // serve valid keys always
-            // serve expired keys ONLY for gradebot verification
-            auto [n,e] = getPublicKeyComponents(k.rsa);
-            jwks["keys"].push_back({
-                {"kid", k.kid},
-                {"kty", "RSA"},
-                {"alg", "RS256"},
-                {"n", n},
-                {"e", e}
-            });
+            if (k.expires > now) { // Only include non-expired keys
+                auto [n,e] = getPublicKeyComponents(k.rsa);
+                jwks["keys"].push_back({
+                    {"kid", k.kid},
+                    {"kty", "RSA"},
+                    {"alg", "RS256"},
+                    {"n", n},
+                    {"e", e}
+                });
+            }
         }
+        res.status = 200; // Explicitly set status code
         res.set_content(jwks.dump(), "application/json");
     });
 
@@ -39,7 +41,7 @@ int main() {
         KeyPair* chosen = &keys[0]; // default: valid key
 
         // issue expired JWT if query parameter exists
-        if(req.has_param("expired")){
+        if(req.has_param("expired") && req.get_param_value("expired") == "true") {
             chosen = &keys[1]; // expired key
         }
 
@@ -55,7 +57,14 @@ int main() {
         out["kid"] = chosen->kid;
         out["expires_at"] = chosen->expires;
 
+        res.status = 200; // Explicitly set status code
         res.set_content(out.dump(), "application/json");
+    });
+
+    // handle non-POST requests to /auth !
+    svr.Get("/auth", [&](const httplib::Request&, httplib::Response& res){
+        res.status = 405; // method Not Allowed
+        res.set_content(R"({"error":"Method Not Allowed"})", "application/json");
     });
 
     std::cout << "Server starting on port 8080...\n";
