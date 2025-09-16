@@ -17,42 +17,36 @@ int main() {
 
     svr.Get("/.well-known/jwks.json", [&](const httplib::Request&, httplib::Response& res){
         json jwks; jwks["keys"] = json::array();
-        time_t now = time(nullptr);
         for(auto& k : keys){
-            if(k.expires > now){
-                auto [n,e] = getPublicKeyComponents(k.rsa);
-                jwks["keys"].push_back({{"kid", k.kid},{"kty","RSA"},{"alg","RS256"},{"n",n},{"e",e}});
-            }
+            auto [n,e] = getPublicKeyComponents(k.rsa);
+            jwks["keys"].push_back({{"kid", k.kid},{"kty","RSA"},{"alg","RS256"},{"n",n},{"e",e}});
         }
         res.set_content(jwks.dump(), "application/json");
     });
 
-svr.Post("/auth", [&](const httplib::Request& req, httplib::Response& res){
-    KeyPair* chosen = &keys[0]; // always pick the first key (unexpired)
-    
-    // if "expired" query is present, return the expired key
-    if(req.has_param("expired")){
-        chosen = &keys[1]; // second key is expired
-    }
+    svr.Post("/auth", [&](const httplib::Request& req, httplib::Response& res){
+        KeyPair* chosen = &keys[0]; // always pick the first key (unexpired)
+        
+        // if "expired" query is present, return the expired key
+        if(req.has_param("expired")){
+            chosen = &keys[1]; // second key is expired
+        }
 
-    json payload;
-    payload["sub"] = "fakeuser";
-    payload["iat"] = time(nullptr);
-    payload["exp"] = chosen->expires;
+        json payload;
+        payload["sub"] = "fakeuser";
+        payload["iat"] = time(nullptr);
+        payload["exp"] = chosen->expires;
 
-    std::string token = signJWT(*chosen, payload.dump());
+        std::string token = signJWT(*chosen, payload.dump());
 
-    json out;
-    out["token"] = token;
-    out["kid"] = chosen->kid;
-    out["expires_at"] = chosen->expires;
+        json out;
+        out["token"] = token;
+        out["kid"] = chosen->kid;
+        out["expires_at"] = chosen->expires;
 
-    res.set_content(out.dump(), "application/json");
-});
-
+        res.set_content(out.dump(), "application/json");
+    });
 
     std::cout << "Server starting on port 8080...\n";
     svr.listen("0.0.0.0", 8080);
 }
-
-
