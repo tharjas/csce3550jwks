@@ -3,33 +3,43 @@
 #include <vector>
 #include <iostream>
 #include <ctime>
-#include "json.hpp" // Include single-header JSON library
+#include "json.hpp" // include single-header JSON library
 
 using json = nlohmann::json;
 
 int main() {
     httplib::Server svr;
 
-    // Generate two keys: one valid, one expired
+    // generate two keys: one valid, one expired
     std::vector<KeyPair> keys;
     keys.push_back(generateKey("key1", 3600)); // expires in 1h
     keys.push_back(generateKey("key2", -3600)); // expired
 
+    // JWKS endpoint
     svr.Get("/.well-known/jwks.json", [&](const httplib::Request&, httplib::Response& res){
-        json jwks; jwks["keys"] = json::array();
+        json jwks; 
+        jwks["keys"] = json::array();
         for(auto& k : keys){
             auto [n,e] = getPublicKeyComponents(k.rsa);
-            jwks["keys"].push_back({{"kid", k.kid},{"kty","RSA"},{"alg","RS256"},{"n",n},{"e",e}});
+            jwks["keys"].push_back({
+                {"kid", k.kid},
+                {"kty","RSA"},
+                {"alg","RS256"},
+                {"n", n},
+                {"e", e},
+                {"expired", k.expires <= time(nullptr)} // debugging
+            });
         }
         res.set_content(jwks.dump(), "application/json");
     });
 
+    // Auth endpoint
     svr.Post("/auth", [&](const httplib::Request& req, httplib::Response& res){
-        KeyPair* chosen = &keys[0]; // always pick the first key (unexpired)
+        KeyPair* chosen = &keys[0]; // default: unexpired key
         
-        // if "expired" query is present, return the expired key
+        // if "expired" query param is present, return the expired key !
         if(req.has_param("expired")){
-            chosen = &keys[1]; // second key is expired
+            chosen = &keys[1];
         }
 
         json payload;
