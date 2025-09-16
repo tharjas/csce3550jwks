@@ -47,7 +47,7 @@ inline std::string base64UrlEncodeNoPad(const std::string &input) {
     return out;
 }
 
-// helper: convert RSA key to n/e for JWKS
+// convert RSA key to n/e for JWKS
 inline std::pair<std::string,std::string> getPublicKeyComponents(RSA* rsa) {
     const BIGNUM* n; const BIGNUM* e;
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -65,7 +65,7 @@ inline std::pair<std::string,std::string> getPublicKeyComponents(RSA* rsa) {
              base64UrlEncodeNoPad(std::string((char*)eBuf.data(), eLen)) };
 }
 
-// helper: sign a JWT using RS256
+// sign JWT using RS256
 inline std::string signJWT(const KeyPair& kp, const std::string& payload) {
     std::string header = R"({"alg":"RS256","typ":"JWT","kid":")" + kp.kid + "\"}";
     std::string message = base64UrlEncodeNoPad(header) + "." + base64UrlEncodeNoPad(payload);
@@ -74,7 +74,7 @@ inline std::string signJWT(const KeyPair& kp, const std::string& payload) {
     unsigned int sigLen;
 
     EVP_PKEY* pkey = EVP_PKEY_new();
-    EVP_PKEY_set1_RSA(pkey, kp.rsa); // increment ref count, keep kp.rsa valid
+    EVP_PKEY_set1_RSA(pkey, kp.rsa); // increment ref count to keep kp.rsa safe
 
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
     EVP_SignInit(ctx, EVP_sha256());
