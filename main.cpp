@@ -3,7 +3,7 @@
 #include <vector>
 #include <iostream>
 #include <ctime>
-#include "json.hpp" // include single-header JSON library
+#include "json.hpp"
 
 using json = nlohmann::json;
 
@@ -12,33 +12,36 @@ int main() {
 
     // generate two keys: one valid, one expired
     std::vector<KeyPair> keys;
-    keys.push_back(generateKey("key1", 3600)); // expires in 1h
-    keys.push_back(generateKey("key2", -3600)); // expired
+    keys.push_back(generateKey("key1", 3600));  // expires in 1 hour
+    keys.push_back(generateKey("key2", -3600)); // already expired
 
-    // JWKS endpoint: serve all keys so expired keys can be verified
+    // JWKS endpoint: serve only unexpired keys
     svr.Get("/.well-known/jwks.json", [&](const httplib::Request&, httplib::Response& res){
         json jwks; 
         jwks["keys"] = json::array();
+        time_t now = time(nullptr);
         for(auto& k : keys){
-            auto [n,e] = getPublicKeyComponents(k.rsa);
-            jwks["keys"].push_back({
-                {"kid", k.kid},
-                {"kty", "RSA"},
-                {"alg", "RS256"},
-                {"n", n},
-                {"e", e}
-            });
+            if(k.expires > now){ // only non-expired keys
+                auto [n,e] = getPublicKeyComponents(k.rsa);
+                jwks["keys"].push_back({
+                    {"kid", k.kid},
+                    {"kty", "RSA"},
+                    {"alg", "RS256"},
+                    {"n", n},
+                    {"e", e}
+                });
+            }
         }
         res.set_content(jwks.dump(), "application/json");
     });
 
-    // auth endpoint: issue JWT
+    // /auth endpoint: issue JWTs
     svr.Post("/auth", [&](const httplib::Request& req, httplib::Response& res){
         KeyPair* chosen = &keys[0]; // default: valid key
-        
-        // if "expired" query is present, return the expired key
+
+        // issue expired JWT if query parameter exists
         if(req.has_param("expired")){
-            chosen = &keys[1]; // second key is expired
+            chosen = &keys[1]; // expired key
         }
 
         json payload;
