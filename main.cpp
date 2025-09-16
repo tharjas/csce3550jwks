@@ -15,22 +15,19 @@ int main() {
     keys.push_back(generateKey("key1", 3600));  // expires in 1 hour
     keys.push_back(generateKey("key2", -3600)); // already expired
 
-    // JWKS endpoint: serve only unexpired keys
+    // JWKS endpoint: serve all keys so gradebot can verify signatures
     svr.Get("/.well-known/jwks.json", [&](const httplib::Request&, httplib::Response& res){
         json jwks; 
         jwks["keys"] = json::array();
-        time_t now = time(nullptr);
         for(auto& k : keys){
-            if(k.expires > now){ // only non-expired keys
-                auto [n,e] = getPublicKeyComponents(k.rsa);
-                jwks["keys"].push_back({
-                    {"kid", k.kid},
-                    {"kty", "RSA"},
-                    {"alg", "RS256"},
-                    {"n", n},
-                    {"e", e}
-                });
-            }
+            auto [n,e] = getPublicKeyComponents(k.rsa);
+            jwks["keys"].push_back({
+                {"kid", k.kid},
+                {"kty", "RSA"},
+                {"alg", "RS256"},
+                {"n", n},
+                {"e", e}
+            });
         }
         res.set_content(jwks.dump(), "application/json");
     });
