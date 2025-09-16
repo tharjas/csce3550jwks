@@ -47,7 +47,7 @@ inline std::string base64UrlEncodeNoPad(const std::string &input) {
     return out;
 }
 
-// helper: simple function to convert RSA key to n/e
+// helper: convert RSA key to n/e for JWKS
 inline std::pair<std::string,std::string> getPublicKeyComponents(RSA* rsa) {
     const BIGNUM* n; const BIGNUM* e;
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -72,8 +72,9 @@ inline std::string signJWT(const KeyPair& kp, const std::string& payload) {
 
     unsigned char sig[256];
     unsigned int sigLen;
+
     EVP_PKEY* pkey = EVP_PKEY_new();
-    EVP_PKEY_assign_RSA(pkey, RSAPublicKey_dup(kp.rsa)); // duplicate key, keep original safe
+    EVP_PKEY_set1_RSA(pkey, kp.rsa); // increment ref count, keep kp.rsa valid
 
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
     EVP_SignInit(ctx, EVP_sha256());
