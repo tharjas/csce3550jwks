@@ -1,7 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include "catch_amalgamated.hpp"
-#include "../jwt_utils.h"
-#include "../httplib.h"
+#include "jwt_utils.h"
+#include "httplib.h"
 #include "json.hpp"
 
 using json = nlohmann::json;
