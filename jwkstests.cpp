@@ -1,5 +1,5 @@
 #define CATCH_CONFIG_MAIN
-#include "catch.hpp"
+#include "catch_amalgamated.hpp"
 #include "../jwt_utils.h"
 #include "../httplib.h"
 #include "json.hpp"
