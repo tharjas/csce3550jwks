@@ -41,17 +41,18 @@ int main() {
         res.set_content(jwks.dump(), "application/json");
     });
 
-    // Handle non-GET requests to JWKS
-    auto methodNotAllowed = [&](const httplib::Request&, httplib::Response& res){
-        std::cout << "Received invalid method for /.well-known/jwks.json" << std::endl;
+    // handle non-GET requests to JWKS
+    auto jwksMethodNotAllowed = [&](const httplib::Request& req, httplib::Response& res){
+        std::cout << "Received invalid method " << req.method << " for /.well-known/jwks.json" << std::endl;
         res.status = 405;
-        res.set_header("Content-Type", "application/json");
+        res.set_header("Content-Type", "text/plain");
         res.set_header("Allow", "GET");
-        res.set_content(R"({"error":"Method Not Allowed"})", "application/json");
     };
-    svr.Post("/.well-known/jwks.json", methodNotAllowed);
-    svr.Put("/.well-known/jwks.json", methodNotAllowed);
-    svr.Delete("/.well-known/jwks.json", methodNotAllowed);
+    svr.Post("/.well-known/jwks.json", jwksMethodNotAllowed);
+    svr.Put("/.well-known/jwks.json", jwksMethodNotAllowed);
+    svr.Delete("/.well-known/jwks.json", jwksMethodNotAllowed);
+    svr.Patch("/.well-known/jwks.json", jwksMethodNotAllowed);
+    svr.Options("/.well-known/jwks.json", jwksMethodNotAllowed);
 
     // auth endpoint: issue JWTs
     svr.Post("/auth", [&](const httplib::Request& req, httplib::Response& res){
@@ -83,16 +84,37 @@ int main() {
     });
 
     // handle non-POST requests to /auth
-    auto authMethodNotAllowed = [&](const httplib::Request&, httplib::Response& res){
-        std::cout << "Received invalid method for /auth" << std::endl;
+    auto authMethodNotAllowed = [&](const httplib::Request& req, httplib::Response& res){
+        std::cout << "Received invalid method " << req.method << " for /auth" << std::endl;
         res.status = 405;
-        res.set_header("Content-Type", "application/json");
+        res.set_header("Content-Type", "text/plain");
         res.set_header("Allow", "POST");
-        res.set_content(R"({"error":"Method Not Allowed"})", "application/json");
     };
     svr.Get("/auth", authMethodNotAllowed);
     svr.Put("/auth", authMethodNotAllowed);
     svr.Delete("/auth", authMethodNotAllowed);
+    svr.Patch("/auth", authMethodNotAllowed);
+    svr.Options("/auth", authMethodNotAllowed);
+
+    // catch-all for unknown routes and unhandled methods (including HEAD!)
+    //source for coding these parts: https://github.com/yhirose/cpp-httplib
+    
+    svr.set_error_handler([](const httplib::Request& req, httplib::Response& res){
+        std::cout << "Received request for unknown route or method: " << req.method << " " << req.path << std::endl;
+        if (req.path == "/.well-known/jwks.json") {
+            res.status = 405;
+            res.set_header("Content-Type", "text/plain");
+            res.set_header("Allow", "GET");
+        } else if (req.path == "/auth") {
+            res.status = 405;
+            res.set_header("Content-Type", "text/plain");
+            res.set_header("Allow", "POST");
+        } else {
+            res.status = 404;
+            res.set_header("Content-Type", "text/plain");
+            res.set_content("Not Found", "text/plain");
+        }
+    });
 
     std::cout << "Server starting on port 8080...\n";
     svr.listen("0.0.0.0", 8080);
