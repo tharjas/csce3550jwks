@@ -9,6 +9,7 @@
 using json = nlohmann::json;
 
 // JWT verification
+// AI assistance was helped to use write this function! I needed help with base64 decoding and JSON parsing
 inline bool isJWTExpired(const std::string& token) {
     size_t firstDot = token.find('.');
     size_t secondDot = token.find('.', firstDot + 1);
