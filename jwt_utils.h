@@ -1,3 +1,10 @@
+/*
+additional sources:
+https://docs.openssl.org/3.0/man3/EVP_SignInit/
+https://stackoverflow.com/questions/66066864/c-how-to-validate-google-jwt-rs256-using-openssl
+https://github.com/benmcollins/libjwt/tree/master/libjwt
+*/
+
 #pragma once
 #include <string>
 #include <ctime>
@@ -86,4 +93,5 @@ inline std::string signJWT(const KeyPair& kp, const std::string& payload) {
 
     return message + "." + base64UrlEncodeNoPad(std::string((char*)sig, sigLen));
 }
+
 
