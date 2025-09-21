@@ -1,4 +1,4 @@
 # Server screenshots
-(they'll go here)
+![Server Screenshot](gradebot.png)
 # Test suite screenshots
-(and these'll go here)
+![Test Suite Screenshot](testsuite.png)
