@@ -66,6 +66,7 @@ inline std::pair<std::string,std::string> getPublicKeyComponents(RSA* rsa) {
 }
 
 // sign JWT using RS256
+// AI assistance was used to write this function, needed help with RSA signing and base 64-encoding
 inline std::string signJWT(const KeyPair& kp, const std::string& payload) {
     std::string header = R"({"alg":"RS256","typ":"JWT","kid":")" + kp.kid + "\"}";
     std::string message = base64UrlEncodeNoPad(header) + "." + base64UrlEncodeNoPad(payload);
@@ -85,3 +86,4 @@ inline std::string signJWT(const KeyPair& kp, const std::string& payload) {
 
     return message + "." + base64UrlEncodeNoPad(std::string((char*)sig, sigLen));
 }
+
