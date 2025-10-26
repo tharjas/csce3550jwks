@@ -1,10 +1,3 @@
-/*
-additional sources:
-https://docs.openssl.org/3.0/man3/EVP_SignInit/
-https://stackoverflow.com/questions/66066864/c-how-to-validate-google-jwt-rs256-using-openssl
-https://github.com/benmcollins/libjwt/tree/master/libjwt
-*/
-
 #pragma once
 #include <string>
 #include <ctime>
@@ -37,7 +30,26 @@ inline KeyPair generateKey(const std::string& kid, int expiry_seconds) {
     return kp;
 }
 
-// base64 URL encode without padding
+// Serialize RSA private key to PKCS1 PEM string (for DB storage as BLOB)
+inline std::string serializeRSA(RSA* rsa) {
+    BIO* bio = BIO_new(BIO_s_mem());
+    PEM_write_bio_RSAPrivateKey(bio, rsa, nullptr, nullptr, 0, nullptr, nullptr);
+    BUF_MEM* buf;
+    BIO_get_mem_ptr(bio, &buf);
+    std::string pem(buf->data, buf->length);
+    BIO_free(bio);
+    return pem;
+}
+
+// Deserialize PKCS1 PEM string to RSA private key
+inline RSA* deserializeRSA(const std::string& pem) {
+    BIO* bio = BIO_new_mem_buf(pem.c_str(), pem.size());
+    RSA* rsa = PEM_read_bio_RSAPrivateKey(bio, nullptr, nullptr, nullptr);
+    BIO_free(bio);
+    return rsa;
+}
+
+// base64 URL encode without pad
 inline std::string base64UrlEncodeNoPad(const std::string &input) {
     BIO* b64 = BIO_new(BIO_f_base64());
     BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
@@ -73,7 +85,6 @@ inline std::pair<std::string,std::string> getPublicKeyComponents(RSA* rsa) {
 }
 
 // sign JWT using RS256
-// AI assistance was used to write this function, needed help with RSA signing and base 64-encoding
 inline std::string signJWT(const KeyPair& kp, const std::string& payload) {
     std::string header = R"({"alg":"RS256","typ":"JWT","kid":")" + kp.kid + "\"}";
     std::string message = base64UrlEncodeNoPad(header) + "." + base64UrlEncodeNoPad(payload);
@@ -93,5 +104,3 @@ inline std::string signJWT(const KeyPair& kp, const std::string& payload) {
 
     return message + "." + base64UrlEncodeNoPad(std::string((char*)sig, sigLen));
 }
-
-
