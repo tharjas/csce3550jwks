@@ -5,11 +5,11 @@
 #include "json.hpp"
 #include <thread>
 #include <chrono>
+#include <sqlite3.h>  // Include for DB tests
 
 using json = nlohmann::json;
 
-// JWT verification
-// AI assistance was helped to use write this function! I needed help with base64 decoding and JSON parsing
+// JWT verification (unchanged)
 inline bool isJWTExpired(const std::string& token) {
     size_t firstDot = token.find('.');
     size_t secondDot = token.find('.', firstDot + 1);
@@ -36,38 +36,44 @@ inline bool isJWTExpired(const std::string& token) {
     return time(nullptr) >= j["exp"].get<time_t>();
 }
 
-// simple tests
+// Test: JWKS server serves correct keys from DB
+TEST_CASE("JWKS server serves correct keys from DB", "[jwks]") {
+    sqlite3* db;
+    sqlite3_open("totally_not_my_privateKeys.db", &db);
+    const char* sql = "DELETE FROM keys;";  // Clear DB for test
+    sqlite3_exec(db, sql, nullptr, nullptr, nullptr);
 
-// tests that JWKS server only servers non-expired keys
-TEST_CASE("JWKS server serves correct keys", "[jwks]") {
-    std::vector<KeyPair> keys;
-    keys.push_back(generateKey("key1", 3600));  // valid
-    keys.push_back(generateKey("key2", -3600)); // expired
+    // Generate and insert keys
+    KeyPair valid = generateKey("key1", 3600);
+    KeyPair expired = generateKey("key2", -3600);
+    insertKey(db, valid);
+    insertKey(db, expired);
 
     json jwks;
     jwks["keys"] = json::array();
     time_t now = time(nullptr);
 
-    // include keys that have not expired
+    // Load non-expired keys
+    auto keys = loadKeys(db);
     for(auto& k : keys){
-        if(k.expires > now){
-            auto [n,e] = getPublicKeyComponents(k.rsa);
-            jwks["keys"].push_back({
-                {"kid", k.kid},
-                {"kty", "RSA"},
-                {"alg", "RS256"},
-                {"n", n},
-                {"e", e}
-            });
-        }
+        auto [n,e] = getPublicKeyComponents(k.rsa);
+        jwks["keys"].push_back({
+            {"kid", k.kid},
+            {"kty", "RSA"},
+            {"alg", "RS256"},
+            {"n", n},
+            {"e", e}
+        });
+        RSA_free(k.rsa);
     }
 
-    // only the valid key should appear in the JWKS
+    // Only the valid key should appear
     REQUIRE(jwks["keys"].size() == 1);
-    REQUIRE(jwks["keys"][0]["kid"] == "key1");
+    REQUIRE(jwks["keys"][0]["kid"] == "1");  // AUTOINCREMENT starts at 1
+    sqlite3_close(db);
 }
 
-// tests that signing JWT makes a token in the right format
+// Test: JWT signed correctly
 TEST_CASE("JWT signed correctly", "[jwt]") {
     KeyPair kp = generateKey("key1", 3600);
     json payload;
@@ -77,12 +83,12 @@ TEST_CASE("JWT signed correctly", "[jwt]") {
 
     std::string token = signJWT(kp, payload.dump());
 
-    // token should not be empty + should have JWT format of header.payload.signature
     REQUIRE(!token.empty());
-    REQUIRE(token.find('.') != std::string::npos); // JWT format contains periods
+    REQUIRE(token.find('.') != std::string::npos);
+    RSA_free(kp.rsa);
 }
 
-// test that expired JWT is recognized as expired
+// Test: Expired JWT is rejected
 TEST_CASE("Expired JWT is rejected", "[jwt]") {
     KeyPair kp = generateKey("key1", -10); // already expired
     json payload;
@@ -92,17 +98,18 @@ TEST_CASE("Expired JWT is rejected", "[jwt]") {
 
     std::string token = signJWT(kp, payload.dump());
     REQUIRE(isJWTExpired(token) == true);
+    RSA_free(kp.rsa);
 }
 
-// test that JWKS endpoint rejects non-GET reqs
+// Test: JWKS endpoint rejects non-GET requests (server simulation)
 TEST_CASE("JWKS endpoint rejects non-GET requests", "[http]") {
     httplib::Server svr;
 
-    // normal GET endpoint returns 200
+    // Normal GET
     svr.Get("/.well-known/jwks.json", [&](const httplib::Request&, httplib::Response& res){
         res.status = 200; res.set_content("{}", "application/json");
     });
-    // method not allowed for post/put/delete
+    // Method not allowed
     auto methodNotAllowed = [&](const httplib::Request&, httplib::Response& res){
         res.status = 405; res.set_content(R"({"error":"Method Not Allowed"})", "application/json");
     };
@@ -110,12 +117,10 @@ TEST_CASE("JWKS endpoint rejects non-GET requests", "[http]") {
     svr.Put("/.well-known/jwks.json", methodNotAllowed);
     svr.Delete("/.well-known/jwks.json", methodNotAllowed);
 
-    // start server in separate thread
     std::thread t([&]{ svr.listen("0.0.0.0", 8080); });
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     httplib::Client cli("localhost", 8080);
 
-    // non-GET reqs return 405
     REQUIRE(cli.Post("/.well-known/jwks.json")->status == 405);
     REQUIRE(cli.Put("/.well-known/jwks.json")->status == 405);
     REQUIRE(cli.Delete("/.well-known/jwks.json")->status == 405);
@@ -124,14 +129,12 @@ TEST_CASE("JWKS endpoint rejects non-GET requests", "[http]") {
     t.join();
 }
 
-// tests that auth endpoint rejects non-POST reqs
+// Test: Auth endpoint rejects non-POST requests (server simulation)
 TEST_CASE("Auth endpoint rejects non-POST requests", "[http]") {
     httplib::Server svr;
-    // normal POST endpoint returns 200
     svr.Post("/auth", [&](const httplib::Request&, httplib::Response& res){
         res.status = 200; res.set_content("{}", "application/json");
     });
-    // method not allowed for get/put/delete
     auto methodNotAllowed = [&](const httplib::Request&, httplib::Response& res){
         res.status = 405; res.set_content(R"({"error":"Method Not Allowed"})", "application/json");
     };
@@ -139,16 +142,50 @@ TEST_CASE("Auth endpoint rejects non-POST requests", "[http]") {
     svr.Put("/auth", methodNotAllowed);
     svr.Delete("/auth", methodNotAllowed);
 
-    // start server in separate thread
     std::thread t([&]{ svr.listen("0.0.0.0", 8080); });
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     httplib::Client cli("localhost", 8080);
 
-    // non-post reqs return 405
     REQUIRE(cli.Get("/auth")->status == 405);
     REQUIRE(cli.Put("/auth")->status == 405);
     REQUIRE(cli.Delete("/auth")->status == 405);
 
     svr.stop();
     t.join();
+}
+
+// New Test: Serialize/Deserialize RSA
+TEST_CASE("Serialize and Deserialize RSA", "[db]") {
+    KeyPair kp = generateKey("test", 3600);
+    std::string pem = serializeRSA(kp.rsa);
+    RSA* deserialized = deserializeRSA(pem);
+    REQUIRE(deserialized != nullptr);
+
+    // Compare public components to verify
+    auto [n1, e1] = getPublicKeyComponents(kp.rsa);
+    auto [n2, e2] = getPublicKeyComponents(deserialized);
+    REQUIRE(n1 == n2);
+    REQUIRE(e1 == e2);
+
+    RSA_free(kp.rsa);
+    RSA_free(deserialized);
+}
+
+// New Test: DB Insert and Load
+TEST_CASE("DB Insert and Load Keys", "[db]") {
+    sqlite3* db;
+    sqlite3_open("test.db", &db);  // Temp DB for test
+    createTable(db);
+    const char* sql = "DELETE FROM keys;";  // Clear
+    sqlite3_exec(db, sql, nullptr, nullptr, nullptr);
+
+    KeyPair kp = generateKey("test", 3600);
+    insertKey(db, kp);
+
+    auto loaded = loadKeys(db);
+    REQUIRE(loaded.size() == 1);
+    REQUIRE(loaded[0].expires == kp.expires);
+
+    sqlite3_close(db);
+    std::remove("test.db");  // Clean up
 }
